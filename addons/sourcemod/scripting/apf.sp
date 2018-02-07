@@ -36,55 +36,33 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-int inaccuracy,
-	maxpackets;
-NetFlow nf;
-
-bool ban[MAXPLAYERS + 1];
+int m_nTickBase;
+bool ban[MAXPLAYERS + 1],
+	apf_mode;
 
 public Plugin myinfo =
 {
 	name		= "Anti Packets Flood",
 	author		= "HlMod.Ru Community",
-	version		= "1.0.0.3",
+	version		= "1.0.1.4",
 	url			= "http://hlmod.ru/threads/fix-sendnetmsg-kostyl-ot-lagov-chitami.43719/"
 };
 
 public void OnPluginStart()
 {
 	ConVar cvar;
-	(cvar = CreateConVar("sm_apf_inaccuracy", "100", "Inaccuracy of the number of packets", _, true, 0.0)).AddChangeHook(OnInaccuracyChanged);
-	inaccuracy = cvar.IntValue;
+	(cvar = CreateConVar("sm_apf_mode", "1", "0 - Kick / 1 - Ban", _, true, 0.0, true, 1.0)).AddChangeHook(OnModeChanged);
+	apf_mode = cvar.BoolValue;
 
-	(cvar = CreateConVar("sm_apf_netflow", "2", "0 - outgoing traffic / 1 - incoming traffic / 2 - both values", _, true, 0.0, true, 2.0)).AddChangeHook(OnNetFlowChanged);
-	maxpackets = GetMaxPackets((nf = view_as<NetFlow>(cvar.IntValue)));
+	if ((m_nTickBase = FindSendPropInfo("CCSPlayer", "m_nTickBase")) == -1)
+    {
+        SetFailState("Property not found CCSPlayer::m_nTickBase");
+    }
 }
 
-// It is necessary that the maximum number of packets would be correct
-public void OnConfigsExecuted()
+public void OnModeChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
-	maxpackets = GetMaxPackets(nf);
-}
-
-int GetMaxPackets(NetFlow netfl)
-{
-	// sv_maxcmdrate - Max number of packets sent to server per second.
-	if (netfl == NetFlow_Outgoing)		return FindConVar("sv_maxcmdrate").IntValue;
-	// sv_maxupdaterate - Number of packets per second of updates you are requesting from the server.
-	else if (netfl == NetFlow_Incoming)	return FindConVar("sv_maxupdaterate").IntValue;
-
-	// Outgoing + incoming traffic.
-	return FindConVar("sv_maxcmdrate").IntValue + FindConVar("sv_maxupdaterate").IntValue;
-}
-
-public void OnInaccuracyChanged(ConVar convar, const char[] oldValue, const char[] newValue)
-{
-	inaccuracy = convar.IntValue;
-}
-
-public void OnNetFlowChanged(ConVar convar, const char[] oldValue, const char[] newValue)
-{
-	maxpackets = GetMaxPackets((nf = view_as<NetFlow>(convar.IntValue)));
+	apf_mode = convar.BoolValue;
 }
 
 public void OnClientPutInServer(int client)
@@ -95,29 +73,31 @@ public void OnClientPutInServer(int client)
 public Action OnPlayerRunCmd(int client)
 {
 	// If player is a fake client, there wills be an error in GetClientAvgPackets
-	if (IsFakeClient(client))
+	if (IsFakeClient(client) || ban[client])
 	{
 		return;
 	}
 
-	if (!ban[client])
-	{
-		// Get client average packet frequency in packets/sec. Check it
-		Ban(client, GetClientAvgPackets(client, nf));
-	}
-	// Kick client if sm_ban not working
-	//else KickClient(client, "You were banned for ddos by cheat");
+	// Get client m_nTickBase. Check it
+	Ban(client, GetEntData(client, m_nTickBase));
 }
 
-void Ban(int client, float frequency)
+void Ban(int client, int tickbase)
 {
-	if (frequency > maxpackets + inaccuracy)
+	if (tickbase < 0)
 	{
 		ban[client] = true;
-		LogToFileEx("addons/apf.log", "%L Packet frequency exceeding (%.2f) out - (%.2f) inc - (%.2f) latency - (%.2f) loss - (%.2f) choke - (%.2f)",
-			client, frequency, GetClientAvgPackets(client, NetFlow_Outgoing), GetClientAvgPackets(client, NetFlow_Incoming), GetClientAvgLatency(client, NetFlow_Outgoing), GetClientAvgLoss(client, NetFlow_Outgoing), GetClientAvgChoke(client, NetFlow_Outgoing));
+		LogToFileEx("addons/apf.log", "%L Tickbase (%d) is less than 0", client, tickbase);
 
 		// Ban via command
-		ServerCommand("sm_ban #%d 0 \"Packet frequency exceeding\"", GetClientUserId(client));
+		if (apf_mode)
+		{
+			ServerCommand("sm_ban #%d 0 \"Tickbase is less than 0\"", GetClientUserId(client));
+		}
+		// Kick client
+		else
+		{
+			KickClient(client, "Tickbase is less than 0");
+		}
 	}
 }
