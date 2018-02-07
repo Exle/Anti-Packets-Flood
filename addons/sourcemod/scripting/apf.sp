@@ -46,7 +46,7 @@ public Plugin myinfo =
 {
 	name		= "Anti Packets Flood",
 	author		= "HlMod.Ru Community",
-	version		= "1.0.0.2",
+	version		= "1.0.0.3",
 	url			= "http://hlmod.ru/threads/fix-sendnetmsg-kostyl-ot-lagov-chitami.43719/"
 };
 
@@ -56,7 +56,7 @@ public void OnPluginStart()
 	(cvar = CreateConVar("sm_apf_inaccuracy", "100", "Inaccuracy of the number of packets", _, true, 0.0)).AddChangeHook(OnInaccuracyChanged);
 	inaccuracy = cvar.IntValue;
 
-	(cvar = CreateConVar("sm_apf_netflow", "2", "0 - outgoing traffic / 1 - incoming traffic / 2 - both values added together", _, true, 0.0, true, 2.0)).AddChangeHook(OnNetFlowChanged);
+	(cvar = CreateConVar("sm_apf_netflow", "2", "0 - outgoing traffic / 1 - incoming traffic / 2 - both values", _, true, 0.0, true, 2.0)).AddChangeHook(OnNetFlowChanged);
 	maxpackets = GetMaxPackets((nf = view_as<NetFlow>(cvar.IntValue)));
 }
 
@@ -114,7 +114,8 @@ void Ban(int client, float frequency)
 	if (frequency > maxpackets + inaccuracy)
 	{
 		ban[client] = true;
-		LogToFileEx("addons/apf.log", "%L Packet frequency exceeding (%.2f)", client, frequency);
+		LogToFileEx("addons/apf.log", "%L Packet frequency exceeding (%.2f) out - (%.2f) inc - (%.2f) latency - (%.2f) loss - (%.2f) choke - (%.2f)",
+			client, frequency, GetClientAvgPackets(client, NetFlow_Outgoing), GetClientAvgPackets(client, NetFlow_Incoming), GetClientAvgLatency(client, NetFlow_Outgoing), GetClientAvgLoss(client, NetFlow_Outgoing), GetClientAvgChoke(client, NetFlow_Outgoing));
 
 		// Ban via command
 		ServerCommand("sm_ban #%d 0 \"Packet frequency exceeding\"", GetClientUserId(client));
